@@ -173,6 +173,14 @@ final class ATVVAudioDecoder {
     private var framesBeforeSync = 0
     var pendingByteCount: Int { accumulator.pending.count }
 
+    /// Resets frame and ADPCM state for a new remote session while staying in the stream.
+    func restartSegment() {
+        accumulator.reset()
+        pendingSync = nil
+        framesBeforeSync = 0
+        decoder.reset()
+    }
+
     func synchronize(predictor: Int, stepIndex: Int) {
         pendingSync = (predictor, stepIndex)
         framesBeforeSync = accumulator.pending.isEmpty ? 0 : 1
