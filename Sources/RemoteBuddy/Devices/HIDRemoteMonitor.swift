@@ -148,6 +148,8 @@ final class HIDRemoteMonitor {
 
     private var activeDevice: IOHIDDevice?
     private var probedDevices: [IOHIDDevice] = []
+    private var btleServerLogSource: BTLEServerReportLogSource?
+    private var lastGoogleReportBySource: [String: (data: Data, time: TimeInterval)] = [:]
     private var cachedDeviceMetadata: [ObjectIdentifier: CachedDeviceMetadata] = [:]
     private(set) var deviceFingerprint: String?
     private(set) var profileID: UUID?
@@ -374,6 +376,9 @@ final class HIDRemoteMonitor {
         // Scheduling/matching discovers devices without opening every interface.
         // Open only a selected/probed device, so its first open can request seizure.
         self.manager = manager
+        if families.google && !backOnlyMode {
+            startBTLEServerLogSource()
+        }
         startPermissionMonitor()
         updateStatus(LocalizedMessage("button_mapping.status.waiting_for_device"))
         AppLogger.shared.write("HID START mode=\(waitingForServices ? "waiting_for_services" : "adaptive")")
@@ -382,6 +387,9 @@ final class HIDRemoteMonitor {
     isolated deinit { stop() }
 
     func stop() {
+        btleServerLogSource?.stop()
+        btleServerLogSource = nil
+        lastGoogleReportBySource.removeAll()
         isWaitingForMatchingServices = false
         if ownsEventSuppressor { eventSuppressor.stop() }
         permissionPollSubscription?.cancel()
@@ -624,7 +632,57 @@ final class HIDRemoteMonitor {
         diagnosticLogger("HID DEVICE probe_removed")
     }
 
-    fileprivate func handleReport(from device: IOHIDDevice, reportID: UInt32, data: Data) {
+    private func startBTLEServerLogSource() {
+        let source = BTLEServerReportLogSource(
+            peripherals: { [weak self] in
+                guard let self else { return [] }
+                return Set(self.settings.remoteDeviceProfiles
+                    .filter { $0.model.isChromecastRemote }
+                    .compactMap(\.bluetoothIdentifier))
+            },
+            diagnosticLogger: diagnosticLogger,
+            onReport: { [weak self] report in
+                MainActor.assumeIsolated {
+                    self?.handleBTLEServerLogReport(report)
+                }
+            }
+        )
+        btleServerLogSource = source
+        source.start()
+    }
+
+    /// Feeds a report recovered from the BTLEServer log through the normal IOHID path,
+    /// attributed to the matched G9N9N HID device, as if IOHID had delivered it.
+    func handleBTLEServerLogReport(_ report: BTLEServerReportLog.Report) {
+        guard let manager else { return }
+        let candidates: [IOHIDDevice]
+        if let activeDevice {
+            candidates = [activeDevice] + probedDevices
+        } else if let matched = IOHIDManagerCopyDevices(manager) as NSSet? {
+            candidates = probedDevices + matched.allObjects.map { $0 as! IOHIDDevice }
+        } else {
+            candidates = probedDevices
+        }
+        guard let device = candidates.first(where: { allowsG9N9N && isGoogleDevice($0) }) else {
+            diagnosticLogger("HID BTLE_LOG report_unrouted reason=no_google_device id=\(report.reportID)")
+            return
+        }
+        handleReport(from: device, reportID: report.reportID, data: report.data, origin: "btle_log")
+    }
+
+    /// The same report may reach both IOHID and the log if a firmware or macOS update
+    /// starts delivering it; act on whichever arrives first.
+    private func isDuplicateGoogleReport(reportID: UInt32, data: Data, origin: String) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        var key = Data([UInt8(truncatingIfNeeded: reportID)])
+        key.append(data)
+        defer { lastGoogleReportBySource[origin] = (key, now) }
+        return lastGoogleReportBySource.contains { source, last in
+            source != origin && last.data == key && now - last.time < 0.15
+        }
+    }
+
+    fileprivate func handleReport(from device: IOHIDDevice, reportID: UInt32, data: Data, origin: String = "iohid") {
         guard manager != nil else {
             diagnosticLogger("HID REPORT rejected reason=monitor_inactive")
             return
@@ -640,7 +698,11 @@ final class HIDRemoteMonitor {
         currentReportDescriptor = deviceMetadata.reportDescriptor
         if currentReportIsGoogle {
             let payload = data.prefix(16).map { String(format: "%02X", $0) }.joined(separator: " ")
-            diagnosticLogger("HID GOOGLE report id=\(reportID) bytes=\(data.count) payload=\(payload)")
+            diagnosticLogger("HID GOOGLE report id=\(reportID) bytes=\(data.count) payload=\(payload) source=\(origin)")
+            guard !isDuplicateGoogleReport(reportID: reportID, data: data, origin: origin) else {
+                diagnosticLogger("HID GOOGLE report dropped reason=duplicate source=\(origin)")
+                return
+            }
         }
         guard !isGoogleCandidateIdentity(device, metadata: deviceMetadata) || currentReportIsGoogle else { return }
         guard !isT1CandidateIdentity(device, metadata: deviceMetadata) || currentReportIsT1 else { return }
