@@ -122,6 +122,26 @@ struct HoldRepeatConfigurationTests {
         }
     }
 
+    @Test func arrowsRecoveredFromBTLEServerLogAreInjectedInsteadOfPassedThrough() throws {
+        try withSettings { settings in
+            let clock = ControlledTestScheduler(), events = Events()
+            let monitor = monitor(settings, clock: clock, events: events, seized: false)
+            defer { monitor.disconnectSimulatedDevice() }
+            let left = RemoteButton.left.hidUsage
+            monitor.handleSimulatedReport(reportID: 1, data: Data([UInt8(left & 255), UInt8(left >> 8)]))
+            monitor.handleSimulatedReport(reportID: 1, data: Data([0, 0]))
+            clock.advance(to: 1_000)
+            // macOS delivers the native arrow itself for IOHID reports.
+            #expect(events.actions == [])
+            monitor.handleSimulatedReport(
+                reportID: 1, data: Data([UInt8(left & 255), UInt8(left >> 8)]), source: "btle_log")
+            monitor.handleSimulatedReport(reportID: 1, data: Data([0, 0]), source: "btle_log")
+            clock.advance(to: 2_000)
+            // Log-recovered reports never reached macOS, so Remote Buddy must send the arrow.
+            #expect(events.actions == [.arrowLeft])
+        }
+    }
+
     @Test func repeatCoexistsWithDoublePressWithoutEmittingExtraSinglesOnRelease() throws {
         try withSettings { settings in
             settings.setAction(.deleteBackward, for: .power)

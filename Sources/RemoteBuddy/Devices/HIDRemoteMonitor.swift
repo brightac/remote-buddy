@@ -90,6 +90,8 @@ final class HIDRemoteMonitor {
     private let allowsG9N9N: Bool
     private let allowsT1Remote: Bool
     private var currentReportIsGoogle = false
+    /// Reports recovered from the BTLEServer log never reached macOS, so no native key event follows them.
+    private var currentReportFromBTLEServerLog = false
     private var currentReportIsT1 = false
     private var t1VoiceHoldActive = false
     private struct ParsedHIDReport {
@@ -683,6 +685,7 @@ final class HIDRemoteMonitor {
     }
 
     fileprivate func handleReport(from device: IOHIDDevice, reportID: UInt32, data: Data, origin: String = "iohid") {
+        currentReportFromBTLEServerLog = origin == "btle_log"
         guard manager != nil else {
             diagnosticLogger("HID REPORT rejected reason=monitor_inactive")
             return
@@ -825,6 +828,7 @@ final class HIDRemoteMonitor {
     }
 
     func handleSimulatedReport(reportID: UInt32, data: Data, source: String = "simulated") {
+        currentReportFromBTLEServerLog = source == "btle_log"
         guard settings.customMappingEnabled || backOnlyMode else {
             diagnosticLogger("HID REPORT rejected reason=mapping_disabled source=\(source)")
             return
@@ -983,7 +987,7 @@ final class HIDRemoteMonitor {
         // unsupported-input ignore) so unseized monitors never leak physical OS key events.
         if !activeDeviceIsSeized {
             for button in observedButtons {
-                eventSuppressor.arm(button: button, edge: .down)
+                armNativeSuppression(button: button, edge: .down)
             }
         }
         let targetProfileID = profileID ?? settings.selectedRemoteProfileID
@@ -1062,7 +1066,7 @@ final class HIDRemoteMonitor {
                 "HID T1 modal_passthrough phase=release button=\(button.rawValue)"
             )
             if !activeDeviceIsSeized {
-                eventSuppressor.arm(button: button, edge: .up)
+                armNativeSuppression(button: button, edge: .up)
             }
             _ = onRuntimeButton?(profileID, button, .release)
         }
@@ -1097,7 +1101,7 @@ final class HIDRemoteMonitor {
             guard claimedByRuntime || claimedByAppSwitcher else { continue }
 
             if !activeDeviceIsSeized {
-                eventSuppressor.arm(button: button, edge: .down)
+                armNativeSuppression(button: button, edge: .down)
             }
             interceptedT1PassthroughUsages.insert(usage)
             guard mappingDeliveryIsSafe else {
@@ -1180,7 +1184,7 @@ final class HIDRemoteMonitor {
                 recognizesLongPress: preflightRecognizesLongPress
             )
             if !activeDeviceIsSeized, !usesNativePassthrough {
-                eventSuppressor.arm(button: button, edge: .down)
+                armNativeSuppression(button: button, edge: .down)
             }
             var shouldPerformAction = true
             if let deviceFingerprint,
@@ -1196,7 +1200,7 @@ final class HIDRemoteMonitor {
             }
             guard let profileID, shouldPerformAction else {
                 if !activeDeviceIsSeized, usesNativePassthrough {
-                    eventSuppressor.arm(button: button, edge: .down)
+                    armNativeSuppression(button: button, edge: .down)
                 }
                 continue
             }
@@ -1209,7 +1213,7 @@ final class HIDRemoteMonitor {
             }
 
             if onRuntimeButton?(profileID, button, .press) == true {
-                if !activeDeviceIsSeized, usesNativePassthrough { eventSuppressor.arm(button: button, edge: .down) }
+                if !activeDeviceIsSeized, usesNativePassthrough { armNativeSuppression(button: button, edge: .down) }
                 continue
             }
             let recognizesDoubleClick = settings.configuredAction(
@@ -1293,7 +1297,7 @@ final class HIDRemoteMonitor {
             let usedNativePassthrough = nativePassthroughUsages.remove(usage) != nil
             if !activeDeviceIsSeized, !usedNativePassthrough,
                let button = RemoteButton.usageMap[usage] {
-                eventSuppressor.arm(button: button, edge: .up)
+                armNativeSuppression(button: button, edge: .up)
             }
             cancelRepeat(for: usage)
             if let button = RemoteButton.usageMap[usage] {
@@ -1376,7 +1380,7 @@ final class HIDRemoteMonitor {
                 }
             }
         } else if !activeDeviceIsSeized {
-            eventSuppressor.arm(button: button, edge: .up)
+            armNativeSuppression(button: button, edge: .up)
         }
         activeUsages.remove(usage)
         t1ReportUsageState.remove(usage)
@@ -1455,7 +1459,7 @@ final class HIDRemoteMonitor {
         if wasIntercepted {
             diagnosticLogger("HID T1 modal_passthrough recovered reason=\(reason) button=\(button.rawValue)")
             if !activeDeviceIsSeized {
-                eventSuppressor.arm(button: button, edge: .up)
+                armNativeSuppression(button: button, edge: .up)
             }
             _ = onRuntimeButton?(profileID, button, .release)
         }
@@ -1800,6 +1804,14 @@ final class HIDRemoteMonitor {
         return ![.arrowUp, .arrowDown, .arrowLeft, .arrowRight, .deleteBackward].contains(action)
     }
 
+    /// Expects and swallows the native key event macOS generates for a remote press.
+    /// Reports recovered from the BTLEServer log have no native event, so arming would
+    /// only risk swallowing a real keyboard press of the same key.
+    private func armNativeSuppression(button: RemoteButton, edge: RemoteEventEdge) {
+        guard !currentReportFromBTLEServerLog else { return }
+        eventSuppressor.arm(button: button, edge: edge)
+    }
+
     private func shouldUseNativePassthrough(
         button: RemoteButton,
         action: ButtonAction,
@@ -1807,6 +1819,7 @@ final class HIDRemoteMonitor {
         recognizesLongPress: Bool
     ) -> Bool {
         guard !activeDeviceIsSeized,
+              !currentReportFromBTLEServerLog,
               !appSwitcherSession.isActive,
               !recognizesDoubleClick,
               !recognizesLongPress,
@@ -2191,12 +2204,12 @@ final class HIDRemoteMonitor {
         if !activeDeviceIsSeized {
             for usage in activeUsages.subtracting(nativePassthroughUsages) {
                 if let button = RemoteButton.usageMap[usage] {
-                    eventSuppressor.arm(button: button, edge: .up)
+                    armNativeSuppression(button: button, edge: .up)
                 }
             }
             for usage in interceptedT1PassthroughUsages {
                 if let button = RemoteButton.usageMap[usage] {
-                    eventSuppressor.arm(button: button, edge: .up)
+                    armNativeSuppression(button: button, edge: .up)
                 }
             }
         }
