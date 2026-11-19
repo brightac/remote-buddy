@@ -53,6 +53,28 @@ struct BTLEServerReportLogTests {
         #expect(attributor.accept(report("2: {length = 2, bytes = 0xe900}", at: 11.004), peripherals: [remote]) == nil)
     }
 
+    // Captured: press 4200 has a dispatch line 46 ms earlier, its release 0000 has none
+    // (the nearest dispatch line is 145 ms before it and already consumed).
+    @Test func releaseWithoutItsOwnIndicationStillReachesTheRemote() {
+        var attributor = BTLEServerReportLog.Attributor()
+        _ = attributor.accept(indication(remote, at: 44.844), peripherals: [remote])
+        #expect(attributor.accept(report("2: {length = 2, bytes = 0x4200}", at: 44.890), peripherals: [remote])
+            == .init(reportID: 2, data: Data([0x42, 0x00])))
+        #expect(attributor.accept(report("2: {length = 2, bytes = 0x0000}", at: 44.989), peripherals: [remote])
+            == .init(reportID: 2, data: Data([0x00, 0x00])))
+        // Nothing held any more: a stray zero report is not forwarded.
+        #expect(attributor.accept(report("2: {length = 2, bytes = 0x0000}", at: 45.5), peripherals: [remote]) == nil)
+    }
+
+    @Test func keyboardZeroReportDoesNotReleaseTheRemote() {
+        var attributor = BTLEServerReportLog.Attributor()
+        _ = attributor.accept(indication(remote, at: 1.0), peripherals: [remote])
+        _ = attributor.accept(report("2: {length = 2, bytes = 0x4300}", at: 1.01), peripherals: [remote])
+        _ = attributor.accept(indication(keyboard, at: 1.5), peripherals: [remote])
+        #expect(attributor.accept(report("1: {length = 8, bytes = 0x0000000000000000}", at: 1.51),
+            peripherals: [remote]) == nil)
+    }
+
     @Test func staleIndicationDoesNotAttributeLaterReport() {
         var attributor = BTLEServerReportLog.Attributor()
         _ = attributor.accept(indication(remote, at: 10.0), peripherals: [remote])
@@ -63,7 +85,8 @@ struct BTLEServerReportLogTests {
         var attributor = BTLEServerReportLog.Attributor()
         _ = attributor.accept(indication(remote, at: 10.0), peripherals: [remote])
         #expect(attributor.accept(report("2: {length = 2, bytes = 0x4200}", at: 10.005), peripherals: [remote]) != nil)
-        #expect(attributor.accept(report("2: {length = 2, bytes = 0x0000}", at: 10.010), peripherals: [remote]) == nil)
+        // A second press needs its own indication; only a release may borrow the held press.
+        #expect(attributor.accept(report("2: {length = 2, bytes = 0x4300}", at: 10.010), peripherals: [remote]) == nil)
     }
 
     @Test func recoveredReportsDecodeToRemoteButtons() {

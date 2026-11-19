@@ -29,7 +29,8 @@ enum BTLEServerReportLog {
         "AND eventMessage CONTAINS \"BTLEServer\")"
 
     /// Maximum gap between bluetoothd's dispatch line and BTLEServer's report line.
-    static let attributionWindow: TimeInterval = 0.05
+    /// Observed gaps reach 46 ms, so leave headroom.
+    static let attributionWindow: TimeInterval = 0.2
 
     private static let reportPattern = try! NSRegularExpression(
         pattern: #"^Updated input report for ID #(\d+): \{length = (\d+), bytes = 0x([0-9a-fA-F]+)\}$"#
@@ -88,8 +89,13 @@ enum BTLEServerReportLog {
     }
 
     /// Pairs indication and report lines and keeps only reports from `peripherals`.
+    ///
+    /// bluetoothd does not always log a dispatch line for a release, so an all-zero
+    /// report with the same ID and length as a forwarded press that is still held is
+    /// attributed to the remote even without its own indication.
     struct Attributor {
         private var lastIndication: (peripheral: UUID, timestamp: TimeInterval)?
+        private var heldReport: (reportID: UInt32, length: Int)?
 
         mutating func accept(_ line: Line, peripherals: Set<UUID>) -> Report? {
             switch line {
@@ -97,13 +103,27 @@ enum BTLEServerReportLog {
                 lastIndication = (peripheral, timestamp)
                 return nil
             case let .report(report, timestamp):
-                guard let last = lastIndication else { return nil }
+                let last = lastIndication
                 lastIndication = nil
-                guard peripherals.contains(last.peripheral),
-                      timestamp - last.timestamp >= -0.005,
-                      timestamp - last.timestamp <= attributionWindow else { return nil }
-                return report
+                if let last, peripherals.contains(last.peripheral),
+                   timestamp - last.timestamp >= -0.005,
+                   timestamp - last.timestamp <= attributionWindow {
+                    track(report)
+                    return report
+                }
+                if let held = heldReport, held.reportID == report.reportID,
+                   held.length == report.data.count, report.data.allSatisfy({ $0 == 0 }) {
+                    heldReport = nil
+                    return report
+                }
+                return nil
             }
+        }
+
+        private mutating func track(_ report: Report) {
+            heldReport = report.data.allSatisfy({ $0 == 0 })
+                ? nil
+                : (report.reportID, report.data.count)
         }
     }
 }
