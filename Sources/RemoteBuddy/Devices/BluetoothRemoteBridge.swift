@@ -260,6 +260,10 @@ final class BluetoothRemoteBridge: NSObject {
     private var latchSilence = ATVVLatchSilenceDetector()
     private var latchTimer: ScheduledOperation?
     private var latchIgnoreAudioUntil: TimeInterval?
+    /// Tap-to-talk defers the voice session (and the input method's Fn) until the first
+    /// audio packet: the remote sends nothing for ~1.3 s after a press, and lighting the
+    /// input method earlier makes the user start talking into silence.
+    private var streamStartAwaitingAudio = false
     private var microphoneClosePending = false
     private var microphoneCloseSessionID: UInt8?
     private var microphoneCloseWatchdog: ScheduledOperation?
@@ -751,6 +755,7 @@ final class BluetoothRemoteBridge: NSObject {
     private func closeLatchedMicrophone(sessionID session: UInt8, now: TimeInterval) {
         latchTimer?.cancel()
         latchTimer = nil
+        streamStartAwaitingAudio = false
         _ = write(ATVVProtocol.microphoneClose(version: capabilities.version, sessionID: session))
         microphoneOpened = false
         latchIgnoreAudioUntil = now + ATVVVoiceLatch.endingTimeout
@@ -759,6 +764,7 @@ final class BluetoothRemoteBridge: NSObject {
 
     private func resetVoiceLatch() {
         voiceLatch.reset()
+        streamStartAwaitingAudio = false
         latchTimer?.cancel()
         latchTimer = nil
         latchIgnoreAudioUntil = nil
@@ -1586,14 +1592,15 @@ final class BluetoothRemoteBridge: NSObject {
             let startReason = bytes.count >= 2 ? bytes[1] : ATVVVoiceLatch.holdToTalkReason
             switch voiceLatch.remoteStart(reason: startReason, enabled: voiceTapToTalkEnabled, now: nowUptime()) {
             case .start:
-                break
+                latchIgnoreAudioUntil = nil
+                streamStartAwaitingAudio = voiceLatch.phase != .idle
             case .continueStream:
                 latchTimer?.cancel()
                 latchTimer = nil
                 sessionID = receivedSessionID
                 if let explicitSessionID { activeStreamSessionID = explicitSessionID }
                 microphoneOpened = true
-                audioDecoder.restartSegment()
+                if streaming { audioDecoder.restartSegment() }
                 latchSilence.begin(now: nowUptime())
                 scheduleLatchSilenceCheck()
                 AppLogger.shared.write("ATVV LATCH continued session=\(receivedSessionID)")
@@ -1628,6 +1635,11 @@ final class BluetoothRemoteBridge: NSObject {
             }
             sessionID = receivedSessionID
             if let explicitSessionID { activeStreamSessionID = explicitSessionID }
+            if streamStartAwaitingAudio {
+                microphoneOpened = true
+                AppLogger.shared.write("ATVV LATCH stream_start deferred_until_audio session=\(receivedSessionID)")
+                return
+            }
             startStreaming()
         case 0x00:
             guard lifecycle.acceptsProtocolData(generation: generation) else { return }
@@ -1637,6 +1649,14 @@ final class BluetoothRemoteBridge: NSObject {
                 latchTimer = nil
                 handleRemoteStreamStop(reason: .remoteNotification)
             case .reopen:
+                if streamStartAwaitingAudio, !streaming {
+                    // The host stream's audio follows ~0.4 s after this point and the input
+                    // method takes ~0.6-0.75 s to show it is listening, so start now: it lights
+                    // up just after audio flows instead of ~0.7 s later.
+                    streamStartAwaitingAudio = false
+                    startStreaming()
+                    AppLogger.shared.write("ATVV LATCH stream_start at_release session=\(sessionID)")
+                }
                 reopenLatchedMicrophone()
             case .ignore:
                 AppLogger.shared.write("ATVV LATCH stop_absorbed")
@@ -1809,6 +1829,11 @@ final class BluetoothRemoteBridge: NSObject {
             return
         }
         cancelledMicrophoneOpenAt = nil
+        if streamStartAwaitingAudio, !streaming {
+            streamStartAwaitingAudio = false
+            startStreaming()
+            AppLogger.shared.write("ATVV LATCH stream_start on_first_audio session=\(sessionID)")
+        }
         if !streaming {
             let receivedAt = nowUptime()
             let cooldown = ATVVSessionGate.audioAfterStopCooldown(isT1Candidate: t1Candidate)
