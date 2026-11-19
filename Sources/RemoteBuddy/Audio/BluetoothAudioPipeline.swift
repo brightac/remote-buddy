@@ -100,6 +100,19 @@ final class BluetoothAudioPipeline: @unchecked Sendable {
         }
     }
 
+    /// Starts decoding a new remote audio session inside the same voice stream:
+    /// drops the partial frame and ADPCM state without notifying stop/start.
+    func restartSegment() {
+        let token = lock.withLock { () -> UInt64 in
+            fragmentBytes = 0
+            return generation
+        }
+        queue.async { [self] in
+            guard isCurrent(token) else { return }
+            decoder.restartSegment()
+        }
+    }
+
     func synchronize(predictor: Int, stepIndex: Int) {
         let token = lock.withLock { generation }
         queue.async { [self] in

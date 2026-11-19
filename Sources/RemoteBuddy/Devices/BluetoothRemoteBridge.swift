@@ -256,6 +256,34 @@ final class BluetoothRemoteBridge: NSObject {
     private var localMicrophoneCloseRequested = false
     // This is a requested-open flag; ATVV stream notifications establish actual streaming.
     private var microphoneOpened = false
+    private var voiceLatch = ATVVVoiceLatch()
+    private var latchSilence = ATVVLatchSilenceDetector()
+    private var latchTimer: ScheduledOperation?
+    private var latchIgnoreAudioUntil: TimeInterval?
+    /// Tap-to-talk defers the voice session (and the input method's Fn) until the first
+    /// audio packet: the remote sends nothing for ~1.3 s after a press, and lighting the
+    /// input method earlier makes the user start talking into silence.
+    private var streamStartAwaitingAudio = false
+    private var latchStartTimer: ScheduledOperation?
+
+    /// When to start a deferred voice session after the press, in ms. The remote stops the
+    /// hold-to-talk stream ~1.28 s after a tap and host audio arrives ~0.4 s later (~1.7 s);
+    /// the input method needs 0.62-0.80 s to show it listens and a person needs at least
+    /// ~0.15 s to react, so starting at 1.0 s lights it ~1.6-1.8 s with speech after audio.
+    static let voiceStartDelayDefaultsKey = "g9n9nVoiceStartDelayMs"
+    private var voiceStartDelay: TimeInterval {
+        let ms = UserDefaults.standard.object(forKey: Self.voiceStartDelayDefaultsKey) as? Int ?? 1_000
+        return Double(min(max(ms, 0), 3_000)) / 1_000
+    }
+
+    private func startDeferredVoiceStream(trigger: String) {
+        latchStartTimer?.cancel()
+        latchStartTimer = nil
+        guard streamStartAwaitingAudio, !streaming else { return }
+        streamStartAwaitingAudio = false
+        startStreaming()
+        AppLogger.shared.write("ATVV LATCH stream_start \(trigger) session=\(sessionID)")
+    }
     private var microphoneClosePending = false
     private var microphoneCloseSessionID: UInt8?
     private var microphoneCloseWatchdog: ScheduledOperation?
@@ -726,6 +754,80 @@ final class BluetoothRemoteBridge: NSObject {
         return true
     }
 
+    static let voiceTapToTalkDefaultsKey = "g9n9nVoiceTapToTalk"
+
+    private var voiceTapToTalkEnabled: Bool {
+        googleCandidate && UserDefaults.standard.bool(forKey: Self.voiceTapToTalkDefaultsKey)
+    }
+
+    var isVoiceLatched: Bool { voiceLatch.isLatched }
+
+    /// Ends a latched tap-to-talk session (any remote key, silence). Returns false if none is active.
+    @discardableResult
+    func endVoiceLatch(reason: String) -> Bool {
+        let now = nowUptime()
+        guard voiceLatch.end(now: now) else { return false }
+        AppLogger.shared.write("ATVV LATCH end reason=\(reason) session=\(sessionID)")
+        closeLatchedMicrophone(sessionID: sessionID, now: now)
+        return true
+    }
+
+    private func closeLatchedMicrophone(sessionID session: UInt8, now: TimeInterval) {
+        latchTimer?.cancel()
+        latchTimer = nil
+        streamStartAwaitingAudio = false
+        latchStartTimer?.cancel()
+        latchStartTimer = nil
+        _ = write(ATVVProtocol.microphoneClose(version: capabilities.version, sessionID: session))
+        microphoneOpened = false
+        latchIgnoreAudioUntil = now + ATVVVoiceLatch.endingTimeout
+        handleRemoteStreamStop(reason: .localStop)
+    }
+
+    private func resetVoiceLatch() {
+        voiceLatch.reset()
+        streamStartAwaitingAudio = false
+        latchStartTimer?.cancel()
+        latchStartTimer = nil
+        latchTimer?.cancel()
+        latchTimer = nil
+        latchIgnoreAudioUntil = nil
+    }
+
+    private func reopenLatchedMicrophone() {
+        guard write(ATVVProtocol.microphoneOpen(version: capabilities.version, codec: capabilities.selectedCodec)) else {
+            AppLogger.shared.write("ATVV LATCH reopen write_failed")
+            resetVoiceLatch()
+            handleRemoteStreamStop(reason: .remoteNotification)
+            return
+        }
+        AppLogger.shared.write("ATVV LATCH reopen session=\(sessionID)")
+        latchTimer?.cancel()
+        latchTimer = scheduleMicrophoneClose(ATVVVoiceLatch.reopenTimeout) { [weak self] in
+            guard let self, self.voiceLatch.reopenTimedOut(now: self.nowUptime()) else { return }
+            AppLogger.shared.write("ATVV LATCH reopen timeout")
+            self.latchTimer = nil
+            self.handleRemoteStreamStop(reason: .remoteNotification)
+        }
+    }
+
+    private func scheduleLatchSilenceCheck() {
+        latchTimer?.cancel()
+        latchTimer = scheduleMicrophoneClose(1) { [weak self] in
+            guard let self else { return }
+            self.latchTimer = nil
+            guard self.voiceLatch.phase == .latched else { return }
+            if let window = self.latchSilence.takeWindow() {
+                AppLogger.shared.write("ATVV LATCH level rms_min=\(window.min) rms_max=\(window.max) threshold=\(Int(self.latchSilence.speechThresholdRMS))")
+            }
+            if self.latchSilence.isSilent(now: self.nowUptime()) {
+                self.endVoiceLatch(reason: "silence")
+            } else {
+                self.scheduleLatchSilenceCheck()
+            }
+        }
+    }
+
     @discardableResult
     func requestMicrophoneExtend() -> Bool {
         guard microphoneOpened,
@@ -1050,6 +1152,7 @@ final class BluetoothRemoteBridge: NSObject {
         currentAttemptUsesCachedTarget = false
         resetSession(reason: reason)
         audioDecoder.reset(peripheral: true)
+        resetVoiceLatch()
     }
 
     private func isCurrent(_ candidate: CBPeripheral) -> Bool {
@@ -1124,6 +1227,7 @@ final class BluetoothRemoteBridge: NSObject {
         activeStreamSessionID = nil
         microphoneOpened = false
         audioDecoder.reset()
+        resetVoiceLatch()
         if hadVoiceStartNotified {
             voiceStartNotified = false
             delegate?.bluetoothBridgeDidStopVoice(self)
@@ -1509,6 +1613,30 @@ final class BluetoothRemoteBridge: NSObject {
             deviceInformation.capabilities = capabilities
             let explicitSessionID: UInt8? = bytes.count >= 4 ? bytes[3] : nil
             let receivedSessionID = explicitSessionID ?? sessionID
+            let startReason = bytes.count >= 2 ? bytes[1] : ATVVVoiceLatch.holdToTalkReason
+            switch voiceLatch.remoteStart(reason: startReason, enabled: voiceTapToTalkEnabled, now: nowUptime()) {
+            case .start:
+                latchIgnoreAudioUntil = nil
+                streamStartAwaitingAudio = voiceLatch.phase != .idle
+            case .continueStream:
+                latchTimer?.cancel()
+                latchTimer = nil
+                sessionID = receivedSessionID
+                if let explicitSessionID { activeStreamSessionID = explicitSessionID }
+                microphoneOpened = true
+                if streaming { audioDecoder.restartSegment() }
+                latchSilence.begin(now: nowUptime())
+                scheduleLatchSilenceCheck()
+                AppLogger.shared.write("ATVV LATCH continued session=\(receivedSessionID)")
+                return
+            case .endLatch:
+                AppLogger.shared.write("ATVV LATCH end reason=voice_key session=\(receivedSessionID)")
+                closeLatchedMicrophone(sessionID: receivedSessionID, now: nowUptime())
+                return
+            case .ignore:
+                AppLogger.shared.write("ATVV LATCH start_ignored session=\(receivedSessionID)")
+                return
+            }
             if ATVVSessionGate.shouldIgnoreStreamAfterCancelledOpen(
                 cancelledAt: cancelledMicrophoneOpenAt
             ) {
@@ -1531,10 +1659,31 @@ final class BluetoothRemoteBridge: NSObject {
             }
             sessionID = receivedSessionID
             if let explicitSessionID { activeStreamSessionID = explicitSessionID }
+            if streamStartAwaitingAudio {
+                microphoneOpened = true
+                AppLogger.shared.write("ATVV LATCH stream_start deferred session=\(receivedSessionID)")
+                latchStartTimer?.cancel()
+                latchStartTimer = scheduleMicrophoneClose(voiceStartDelay) { [weak self] in
+                    self?.startDeferredVoiceStream(trigger: "at_timer")
+                }
+                return
+            }
             startStreaming()
         case 0x00:
             guard lifecycle.acceptsProtocolData(generation: generation) else { return }
-            handleRemoteStreamStop(reason: .remoteNotification)
+            switch voiceLatch.remoteStop(now: nowUptime()) {
+            case .stop:
+                latchTimer?.cancel()
+                latchTimer = nil
+                handleRemoteStreamStop(reason: .remoteNotification)
+            case .reopen:
+                // Fallback if the press timer has not fired yet: audio follows ~0.4 s after
+                // this point and the input method needs longer than that to light up.
+                startDeferredVoiceStream(trigger: "at_release")
+                reopenLatchedMicrophone()
+            case .ignore:
+                AppLogger.shared.write("ATVV LATCH stop_absorbed")
+            }
         case 0x0C:
             guard googleCandidate || t1Candidate, lifecycle.acceptsProtocolData(generation: generation) else { return }
             handleRemoteStreamStop(reason: .remoteMicrophoneRefused)
@@ -1667,6 +1816,9 @@ final class BluetoothRemoteBridge: NSObject {
     }
 
     private func handleRemoteStreamStop(reason: BluetoothVoiceStopReason) {
+        // Any other end of the stream (watchdog, refusal, keepalive limit) drops the latch;
+        // only a latch that is ending keeps absorbing the remote's late start/stop.
+        if case .ending = voiceLatch.phase {} else { resetVoiceLatch() }
         recordStreamStop(reason: reason)
         microphoneOpened = false
         microphoneClosePending = false
@@ -1677,6 +1829,10 @@ final class BluetoothRemoteBridge: NSObject {
     }
 
     private func handleAudio(_ data: Data) {
+        if let until = latchIgnoreAudioUntil {
+            if nowUptime() < until, !streaming { return }
+            latchIgnoreAudioUntil = nil
+        }
         guard let generation = currentGeneration(),
               ATVVSessionGate.canOpenMicrophone(
                 phase: lifecycle,
@@ -1696,6 +1852,9 @@ final class BluetoothRemoteBridge: NSObject {
             return
         }
         cancelledMicrophoneOpenAt = nil
+        if streamStartAwaitingAudio, !streaming {
+            startDeferredVoiceStream(trigger: "on_first_audio")
+        }
         if !streaming {
             let receivedAt = nowUptime()
             let cooldown = ATVVSessionGate.audioAfterStopCooldown(isT1Candidate: t1Candidate)
@@ -1721,6 +1880,7 @@ final class BluetoothRemoteBridge: NSObject {
         let accepted = audioDecoder.append(data, frameSize: capabilities.frameSize,
             gainDB: settings.gainDB(forBluetoothIdentifier: deviceIdentifier)) { [weak self] samples in
             guard let self else { return }
+            if self.voiceLatch.phase == .latched { self.latchSilence.observe(samples, now: self.nowUptime()) }
             self.delegate?.bluetoothBridge(self, didDecode: samples)
         }
         if !accepted {

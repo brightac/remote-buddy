@@ -633,6 +633,10 @@ extension BridgeAppModel {
                 fingerprint: fingerprint,
                 registerIfMissing: true
             ) else { return nil }
+            // A latched tap-to-talk session ends on any remote key, which is consumed.
+            if self.endLatchedBluetoothVoice(reason: "remote_key_\(button.rawValue)") {
+                return (resolvedProfileID, false)
+            }
             self.scheduleRemoteWakeRecovery(profileID: resolvedProfileID, reason: "hid_button")
             self.selectRemoteProfile(resolvedProfileID)
             self.lastRemoteButtonPress = button

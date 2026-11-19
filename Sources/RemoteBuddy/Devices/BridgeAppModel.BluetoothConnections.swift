@@ -11,6 +11,15 @@ extension BridgeAppModel {
         return connections.bridges[identifier]
     }
 
+    /// Ends a latched tap-to-talk voice session on any connected remote.
+    func endLatchedBluetoothVoice(reason: String) -> Bool {
+        var ended = false
+        for bridge in connections.bridges.values where bridge.isVoiceLatched {
+            ended = bridge.endVoiceLatch(reason: reason) || ended
+        }
+        return ended
+    }
+
     func startBluetoothConnections() {
         let identifiers = Set(settings.remoteDeviceProfiles.compactMap(\.bluetoothIdentifier))
         for identifier in identifiers where connections.bridges[identifier] == nil {
