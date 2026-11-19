@@ -264,6 +264,26 @@ final class BluetoothRemoteBridge: NSObject {
     /// audio packet: the remote sends nothing for ~1.3 s after a press, and lighting the
     /// input method earlier makes the user start talking into silence.
     private var streamStartAwaitingAudio = false
+    private var latchStartTimer: ScheduledOperation?
+
+    /// When to start a deferred voice session after the press, in ms. The remote stops the
+    /// hold-to-talk stream ~1.28 s after a tap and host audio arrives ~0.4 s later (~1.7 s);
+    /// the input method needs 0.62-0.80 s to show it listens and a person needs at least
+    /// ~0.15 s to react, so starting at 1.0 s lights it ~1.6-1.8 s with speech after audio.
+    static let voiceStartDelayDefaultsKey = "g9n9nVoiceStartDelayMs"
+    private var voiceStartDelay: TimeInterval {
+        let ms = UserDefaults.standard.object(forKey: Self.voiceStartDelayDefaultsKey) as? Int ?? 1_000
+        return Double(min(max(ms, 0), 3_000)) / 1_000
+    }
+
+    private func startDeferredVoiceStream(trigger: String) {
+        latchStartTimer?.cancel()
+        latchStartTimer = nil
+        guard streamStartAwaitingAudio, !streaming else { return }
+        streamStartAwaitingAudio = false
+        startStreaming()
+        AppLogger.shared.write("ATVV LATCH stream_start \(trigger) session=\(sessionID)")
+    }
     private var microphoneClosePending = false
     private var microphoneCloseSessionID: UInt8?
     private var microphoneCloseWatchdog: ScheduledOperation?
@@ -756,6 +776,8 @@ final class BluetoothRemoteBridge: NSObject {
         latchTimer?.cancel()
         latchTimer = nil
         streamStartAwaitingAudio = false
+        latchStartTimer?.cancel()
+        latchStartTimer = nil
         _ = write(ATVVProtocol.microphoneClose(version: capabilities.version, sessionID: session))
         microphoneOpened = false
         latchIgnoreAudioUntil = now + ATVVVoiceLatch.endingTimeout
@@ -765,6 +787,8 @@ final class BluetoothRemoteBridge: NSObject {
     private func resetVoiceLatch() {
         voiceLatch.reset()
         streamStartAwaitingAudio = false
+        latchStartTimer?.cancel()
+        latchStartTimer = nil
         latchTimer?.cancel()
         latchTimer = nil
         latchIgnoreAudioUntil = nil
@@ -1637,7 +1661,11 @@ final class BluetoothRemoteBridge: NSObject {
             if let explicitSessionID { activeStreamSessionID = explicitSessionID }
             if streamStartAwaitingAudio {
                 microphoneOpened = true
-                AppLogger.shared.write("ATVV LATCH stream_start deferred_until_audio session=\(receivedSessionID)")
+                AppLogger.shared.write("ATVV LATCH stream_start deferred session=\(receivedSessionID)")
+                latchStartTimer?.cancel()
+                latchStartTimer = scheduleMicrophoneClose(voiceStartDelay) { [weak self] in
+                    self?.startDeferredVoiceStream(trigger: "at_timer")
+                }
                 return
             }
             startStreaming()
@@ -1649,14 +1677,9 @@ final class BluetoothRemoteBridge: NSObject {
                 latchTimer = nil
                 handleRemoteStreamStop(reason: .remoteNotification)
             case .reopen:
-                if streamStartAwaitingAudio, !streaming {
-                    // The host stream's audio follows ~0.4 s after this point and the input
-                    // method takes ~0.6-0.75 s to show it is listening, so start now: it lights
-                    // up just after audio flows instead of ~0.7 s later.
-                    streamStartAwaitingAudio = false
-                    startStreaming()
-                    AppLogger.shared.write("ATVV LATCH stream_start at_release session=\(sessionID)")
-                }
+                // Fallback if the press timer has not fired yet: audio follows ~0.4 s after
+                // this point and the input method needs longer than that to light up.
+                startDeferredVoiceStream(trigger: "at_release")
                 reopenLatchedMicrophone()
             case .ignore:
                 AppLogger.shared.write("ATVV LATCH stop_absorbed")
@@ -1830,9 +1853,7 @@ final class BluetoothRemoteBridge: NSObject {
         }
         cancelledMicrophoneOpenAt = nil
         if streamStartAwaitingAudio, !streaming {
-            streamStartAwaitingAudio = false
-            startStreaming()
-            AppLogger.shared.write("ATVV LATCH stream_start on_first_audio session=\(sessionID)")
+            startDeferredVoiceStream(trigger: "on_first_audio")
         }
         if !streaming {
             let receivedAt = nowUptime()
