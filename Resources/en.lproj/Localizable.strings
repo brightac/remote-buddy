@@ -1354,3 +1354,11 @@
 "connection.device_guide.g9n9n.limit.detail" = "Automatic hardware keepalive lets both Smart Toggle and Hold-to-Talk stream past 60s, capped at ~5 minutes per session to prevent accidental battery drain.";
 "connection.device_guide.g9n9n.other_key_stops.title" = "Pressing another button stops hands-free listening";
 "connection.device_guide.g9n9n.other_key_stops.detail" = "During hands-free streaming, tapping any other physical button makes firmware stop audio immediately—finish speaking before using other keys.";
+"button_mapping.app_scope.title" = "Application";
+"button_mapping.app_scope.all_apps" = "All Applications (Default)";
+"button_mapping.app_scope.all_apps_hint" = "These are the default buttons, used in every application. Choose an application to change buttons only while it is frontmost; the rest keep the defaults.";
+"button_mapping.app_scope.add" = "Add Application";
+"button_mapping.app_scope.remove" = "Remove This Application";
+"button_mapping.app_scope.voice_key" = "Voice key sends";
+"button_mapping.app_scope.voice_key.follow" = "Same as default";
+"button_mapping.app_scope.editing_hint" = "Editing buttons for %@: used only while it is frontmost. Unchanged buttons keep the defaults; Restore Default on a button returns it to the default.";

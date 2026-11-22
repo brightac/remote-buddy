@@ -135,4 +135,57 @@ struct ApplicationButtonProfileTests {
         #expect(decoded["com.openai.codex"]?.voiceKeyMode == nil)
         #expect(decoded["com.openai.codex"]?.name == "Codex")
     }
+
+    @Test func mappingPageEditsOnlyTheChosenApplication() throws {
+        try withSettings { settings in
+            let undo = ConfiguredButtonAction(action: .commandUndo, shortcut: nil)
+            settings.addApplicationButtonProfile(bundleID: claude, name: "Claude")
+            settings.setApplicationScopedAction(undo, bundleID: claude, button: .input, trigger: .singleClick)
+
+            #expect(settings.applicationScopedAction(bundleID: claude, button: .input, trigger: .singleClick) == undo)
+            #expect(settings.isApplicationOverride(bundleID: claude, button: .input, trigger: .singleClick))
+            // The remote's own mapping is untouched.
+            #expect(settings.configuredBaseAction(for: .input, trigger: .singleClick) != undo)
+            // Unlisted buttons show the remote's mapping inside the application.
+            #expect(settings.applicationScopedAction(bundleID: claude, button: .ok, trigger: .singleClick)
+                == settings.configuredBaseAction(for: .ok, trigger: .singleClick))
+        }
+    }
+
+    @Test func settingTheRemoteMappingAgainDropsTheOverride() throws {
+        try withSettings { settings in
+            settings.addApplicationButtonProfile(bundleID: claude, name: "Claude")
+            settings.setApplicationScopedAction(ConfiguredButtonAction(action: .commandUndo, shortcut: nil),
+                                                bundleID: claude, button: .input, trigger: .singleClick)
+            let base = settings.configuredBaseAction(for: .input, trigger: .singleClick)
+            settings.setApplicationScopedAction(base, bundleID: claude, button: .input, trigger: .singleClick)
+
+            #expect(!settings.isApplicationOverride(bundleID: claude, button: .input, trigger: .singleClick))
+            #expect(settings.applicationButtonProfiles[claude]?.buttons.isEmpty == true)
+        }
+    }
+
+    @Test func applicationsAreAddedRemovedAndGivenAVoiceKey() throws {
+        try withSettings { settings in
+            settings.addApplicationButtonProfile(bundleID: codex, name: "Codex")
+            settings.addApplicationButtonProfile(bundleID: claude, name: "Claude")
+            #expect(settings.sortedApplicationButtonProfiles.map(\.bundleID) == [claude, codex])
+
+            let dictation = VoiceKeyMode.shortcut(CustomKeyboardShortcut(keyCode: 2, modifierFlags: .command, keyLabel: "D"))
+            settings.setApplicationVoiceKeyMode(dictation, bundleID: claude)
+            settings.frontmostApplicationBundleIdentifier = { "com.anthropic.claudefordesktop" }
+            #expect(settings.voiceKeyModeForFrontmostApplication.rawValue == dictation.rawValue)
+
+            settings.setApplicationVoiceKeyMode(nil, bundleID: claude)
+            #expect(settings.voiceKeyModeForFrontmostApplication == settings.effectiveVoiceKeyMode)
+
+            settings.removeApplicationButtonProfile(bundleID: claude)
+            #expect(settings.applicationButtonProfiles[claude] == nil)
+            // Adding an existing application keeps its buttons.
+            settings.setApplicationScopedAction(ConfiguredButtonAction(action: .commandUndo, shortcut: nil),
+                                                bundleID: codex, button: .input, trigger: .singleClick)
+            settings.addApplicationButtonProfile(bundleID: codex, name: "Other")
+            #expect(settings.isApplicationOverride(bundleID: codex, button: .input, trigger: .singleClick))
+        }
+    }
 }

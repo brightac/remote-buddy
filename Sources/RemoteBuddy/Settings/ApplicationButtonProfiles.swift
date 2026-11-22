@@ -74,6 +74,7 @@ extension AppSettings {
         }
         set {
             let data = newValue.isEmpty ? nil : ApplicationButtonProfiles.encode(newValue)
+            objectWillChange.send()
             defaults.set(data, forKey: ApplicationButtonProfiles.defaultsKey)
             applicationButtonProfilesCache = (data, newValue)
         }
@@ -94,5 +95,79 @@ extension AppSettings {
         guard !profiles.isEmpty, let bundleID = frontmostApplicationBundleIdentifier(),
               let profile = profiles[bundleID] else { return nil }
         return profile.action(for: button, trigger: trigger)
+    }
+}
+
+// MARK: - Editing from the mapping page
+
+extension AppSettings {
+    /// What a button does while `bundleID` is frontmost: its override, or the remote's own mapping.
+    func applicationScopedAction(bundleID: String, button: RemoteButton,
+                                 trigger: ButtonTrigger) -> ConfiguredButtonAction {
+        applicationButtonProfiles[bundleID]?.action(for: button, trigger: trigger)
+            ?? configuredBaseAction(for: button, trigger: trigger)
+    }
+
+    /// Stores an override; an action equal to the remote's own mapping removes it, so a
+    /// profile keeps listing only what differs.
+    func setApplicationScopedAction(_ action: ConfiguredButtonAction, bundleID: String,
+                                    button: RemoteButton, trigger: ButtonTrigger) {
+        var profiles = applicationButtonProfiles
+        var profile = profiles[bundleID] ?? ApplicationButtonProfile()
+        let base = configuredBaseAction(for: button, trigger: trigger)
+        profile.setAction(action == base ? nil : action, for: button, trigger: trigger)
+        profiles[bundleID] = profile
+        applicationButtonProfiles = profiles
+    }
+
+    func isApplicationOverride(bundleID: String, button: RemoteButton, trigger: ButtonTrigger) -> Bool {
+        applicationButtonProfiles[bundleID]?.action(for: button, trigger: trigger) != nil
+    }
+
+    func addApplicationButtonProfile(bundleID: String, name: String) {
+        var profiles = applicationButtonProfiles
+        guard profiles[bundleID] == nil else { return }
+        profiles[bundleID] = ApplicationButtonProfile(name: name)
+        applicationButtonProfiles = profiles
+    }
+
+    func removeApplicationButtonProfile(bundleID: String) {
+        var profiles = applicationButtonProfiles
+        profiles[bundleID] = nil
+        applicationButtonProfiles = profiles
+    }
+
+    func setApplicationVoiceKeyMode(_ mode: VoiceKeyMode?, bundleID: String) {
+        var profiles = applicationButtonProfiles
+        guard var profile = profiles[bundleID] else { return }
+        profile.voiceKeyMode = mode
+        profiles[bundleID] = profile
+        applicationButtonProfiles = profiles
+    }
+
+    /// Profiles in a stable order for menus: by display name, then bundle identifier.
+    var sortedApplicationButtonProfiles: [(bundleID: String, profile: ApplicationButtonProfile)] {
+        applicationButtonProfiles
+            .map { (bundleID: $0.key, profile: $0.value) }
+            .sorted {
+                let left = ApplicationButtonProfiles.displayName(bundleID: $0.bundleID, profile: $0.profile)
+                let right = ApplicationButtonProfiles.displayName(bundleID: $1.bundleID, profile: $1.profile)
+                return left.localizedStandardCompare(right) == .orderedAscending
+            }
+    }
+}
+
+extension ApplicationButtonProfiles {
+    static func displayName(bundleID: String, profile: ApplicationButtonProfile?) -> String {
+        if let name = profile?.name, !name.isEmpty { return name }
+        return bundleID
+    }
+
+    /// Reads a chosen .app bundle's identifier and display name.
+    static func applicationIdentity(at url: URL) -> (bundleID: String, name: String)? {
+        guard let bundle = Bundle(url: url), let bundleID = bundle.bundleIdentifier else { return nil }
+        let name = FileManager.default.displayName(atPath: url.path)
+            .replacingOccurrences(of: ".app", with: "")
+        return (bundleID, name)
     }
 }
