@@ -1356,3 +1356,13 @@
 "connection.device_guide.g9n9n.limit.detail" = "已自动启用硬件保活，智能切换与按住说话均可连续说超 60 秒，并在约 5 分钟时自动停麦以防忘记关麦耗尽电量。";
 "connection.device_guide.g9n9n.other_key_stops.title" = "免提期间按其他键会结束收音";
 "connection.device_guide.g9n9n.other_key_stops.detail" = "智能切换免提收音时，若按下任意其他实体按键，硬件会直接停止音频流；请等说完再按其他按键。";
+
+"audio.mic_test.title" = "麦克风测试";
+"audio.mic_test.start" = "测试麦克风";
+"audio.mic_test.stop" = "结束测试";
+"audio.mic_test.hint" = "点“测试麦克风”后按遥控器语音键说话，看电平条：说话时落在绿色区间合适，偏左就把上面的增益调大，经常变红就调小。平时用语音键时这里也会显示电平。";
+"audio.mic_test.testing_hint" = "测试中：按语音键说话，不会打开输入法。增益可以边说边调，2 分钟后自动结束。";
+"audio.mic_test.clipped" = "有爆音";
+"audio.mic_test.clipped_help" = "声音碰到上限被削顶，识别容易出错。把增益调小，点这里清除提示。";
+
+"audio.mic_test.section_title" = "麦克风";

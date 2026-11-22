@@ -21,6 +21,9 @@ extension SettingsView {
             }
             .padding(.bottom, 16)
 
+            generalMicrophoneTestSection
+                .padding(.bottom, 16)
+
             GlassPanel {
                 HStack(spacing: 18) {
                     Image(systemName: "wand.and.stars").font(.title2)

@@ -194,7 +194,11 @@ final class BridgeAppModel: ObservableObject, BluetoothRemoteBridgeDelegate {
             self?.handleVoiceInputDestinationState(state)
         }
     )
-    lazy var voiceTapTrigger = VoiceTapTrigger(selectedMode: { [settings] in settings.effectiveVoiceKeyMode })
+    let microphoneLevels = MicrophoneLevelMonitor()
+    lazy var voiceTapTrigger = VoiceTapTrigger(
+        selectedMode: { [settings] in settings.effectiveVoiceKeyMode },
+        isSuppressed: { [microphoneLevels] in microphoneLevels.isTestingSnapshot }
+    )
     lazy var voiceFnTapSession = makeVoiceFnTapSession()
     private var voiceToolCancellable: AnyCancellable?
     private var applicationIntegrationCancellable: AnyCancellable?

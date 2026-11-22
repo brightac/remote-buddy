@@ -177,7 +177,8 @@ extension BridgeAppModel {
             return false
         }
         // Tap conversion owns the full shortcut transaction; do not also hold its keys.
-        if streaming && settings.effectiveVoiceFnTapModeEnabled {
+        // A microphone test streams audio without pressing the dictation key at all.
+        if streaming && (settings.effectiveVoiceFnTapModeEnabled || microphoneLevels.isTesting) {
             completion(true)
             return true
         }

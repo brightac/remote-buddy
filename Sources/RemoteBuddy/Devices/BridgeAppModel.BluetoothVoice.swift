@@ -476,6 +476,7 @@ extension BridgeAppModel {
 
     func bluetoothBridge(_ bridge: BluetoothRemoteBridge, didDecode samples: [Int16]) {
         guard let identifier = bridge.deviceIdentifier else { return }
+        microphoneLevels.observe(samples, from: identifier)
         if identifier == voiceSession.pendingStart.identifier,
            voiceSession.pendingStart.audio.appendIfWaiting(samples) {
             AppLogger.shared.write(
