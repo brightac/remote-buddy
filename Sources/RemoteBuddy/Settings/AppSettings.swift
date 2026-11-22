@@ -54,6 +54,11 @@ final class AppSettings: ObservableObject {
     }
 
     let defaults: UserDefaults
+    /// Bundle identifier of the frontmost application; injectable for tests.
+    var frontmostApplicationBundleIdentifier: () -> String? = {
+        ApplicationButtonProfiles.currentFrontmostBundleIdentifier()
+    }
+    var applicationButtonProfilesCache: (data: Data?, profiles: [String: ApplicationButtonProfile]) = (nil, [:])
 
     @Published private var storedGainDB: Double
     var gainDB: Double {

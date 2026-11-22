@@ -1356,3 +1356,11 @@
 "connection.device_guide.g9n9n.limit.detail" = "已自动启用硬件保活，智能切换与按住说话均可连续说超 60 秒，并在约 5 分钟时自动停麦以防忘记关麦耗尽电量。";
 "connection.device_guide.g9n9n.other_key_stops.title" = "免提期间按其他键会结束收音";
 "connection.device_guide.g9n9n.other_key_stops.detail" = "智能切换免提收音时，若按下任意其他实体按键，硬件会直接停止音频流；请等说完再按其他按键。";
+"button_mapping.app_scope.title" = "按应用";
+"button_mapping.app_scope.all_apps" = "所有应用（默认）";
+"button_mapping.app_scope.all_apps_hint" = "这里改的是默认按键，在任何应用里都生效。选一个应用后，改的键只在它在前台时生效，其他键沿用默认。";
+"button_mapping.app_scope.add" = "添加应用";
+"button_mapping.app_scope.remove" = "移除这个应用";
+"button_mapping.app_scope.voice_key" = "语音键发送";
+"button_mapping.app_scope.voice_key.follow" = "跟默认一样";
+"button_mapping.app_scope.editing_hint" = "正在改「%@」的按键：只在它在前台时生效。没改过的键沿用默认，点某个键的“恢复默认”就回到默认按键。";

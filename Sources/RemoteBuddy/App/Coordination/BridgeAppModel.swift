@@ -194,7 +194,7 @@ final class BridgeAppModel: ObservableObject, BluetoothRemoteBridgeDelegate {
             self?.handleVoiceInputDestinationState(state)
         }
     )
-    lazy var voiceTapTrigger = VoiceTapTrigger(selectedMode: { [settings] in settings.effectiveVoiceKeyMode })
+    lazy var voiceTapTrigger = VoiceTapTrigger(selectedMode: { [settings] in settings.voiceKeyModeForFrontmostApplication })
     lazy var voiceFnTapSession = makeVoiceFnTapSession()
     private var voiceToolCancellable: AnyCancellable?
     private var applicationIntegrationCancellable: AnyCancellable?

@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State var isMappingSelectionLocked = true
     @State var mappingEditingTarget: ShortcutEditingTarget?
     @State var mappingActionFilter: MappingActionFilter = .basicKeys
+    /// nil edits the remote's own mapping; a bundle identifier edits that application's overrides.
+    @State var mappingApplicationBundleID: String?
     @State var shortcutCaptureTarget: ShortcutEditingTarget?
     @State var applicationShortcutCaptureProfileID: UUID?
     @State var shortcutCaptureFeedback: ShortcutCaptureFeedback?

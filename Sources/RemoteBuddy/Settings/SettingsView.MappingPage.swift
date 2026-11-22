@@ -5,11 +5,25 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension SettingsView {
+    /// The application whose overrides the page edits, when it still has a profile.
+    var editingApplicationBundleID: String? {
+        guard let bundleID = mappingApplicationBundleID,
+              settings.applicationButtonProfiles[bundleID] != nil else { return nil }
+        return bundleID
+    }
+
     func mappingConfiguration(for button: RemoteButton, trigger: ButtonTrigger) -> ConfiguredButtonAction {
-        settings.configuredBaseAction(for: button, trigger: trigger)
+        if let bundleID = editingApplicationBundleID {
+            return settings.applicationScopedAction(bundleID: bundleID, button: button, trigger: trigger)
+        }
+        return settings.configuredBaseAction(for: button, trigger: trigger)
     }
 
     private func saveMappingBinding(_ configured: ConfiguredButtonAction, button: RemoteButton, trigger: ButtonTrigger) {
+        if let bundleID = editingApplicationBundleID {
+            settings.setApplicationScopedAction(configured, bundleID: bundleID, button: button, trigger: trigger)
+            return
+        }
         settings.setBaseBinding(configured, for: button, trigger: trigger, profileID: settings.selectedRemoteProfileID)
     }
 
@@ -89,7 +103,7 @@ extension SettingsView {
                     actionHelpSummary: { button, trigger in mappingActionSummary(for: button, trigger: trigger, detailed: true) },
                     onEdit: { button, trigger in
                         selectedRemoteButton = button
-                        let current = settings.configuredAction(for: button, trigger: trigger).action
+                        let current = mappingConfiguration(for: button, trigger: trigger).action
                         let validFilters = MappingActionFilter.visibleCases(for: button, trigger: trigger)
                         let targetFilter = MappingActionFilter(category: current.category)
                         mappingActionFilter = (current == .disabled || current == .repeatSingleClick)
@@ -141,6 +155,10 @@ extension SettingsView {
                                 .id("mapping-page-top")
                             corruptedSettingsBanner
 
+                            if !isSelectedChromecastPartialSupport {
+                                mappingApplicationScopeBar
+                            }
+
                             hardwareCanvas()
 
                             if !isSelectedChromecastPartialSupport, let target = mappingEditingTarget {
@@ -149,7 +167,7 @@ extension SettingsView {
                             }
 
                             mappingFooter()
-                            if !isSelectedChromecastPartialSupport {
+                            if !isSelectedChromecastPartialSupport, editingApplicationBundleID == nil {
                                 mappingResetAllDefaultsSection
                             }
                             Color.clear.frame(height: 1).id("mapping-page-bottom")
@@ -287,7 +305,10 @@ extension SettingsView {
     }
 
     private func restoreDefaultAction(for button: RemoteButton, trigger: ButtonTrigger) {
-        let defaultAction = settings.defaultAction(for: button, trigger: trigger)
+        // Inside an application the default is the remote's own mapping, which drops the override.
+        let defaultAction = editingApplicationBundleID == nil
+            ? settings.defaultAction(for: button, trigger: trigger)
+            : settings.configuredBaseAction(for: button, trigger: trigger)
         saveMappingBinding(defaultAction, button: button, trigger: trigger)
         shortcutCaptureTarget = nil
         applicationShortcutCaptureProfileID = nil

@@ -266,18 +266,27 @@ extension AppSettings {
         customApplicationProfiles[index] = profile
     }
 
+    /// The remote's own mapping, as edited on the mapping page (no application override).
     func configuredBaseAction(
         for button: RemoteButton,
         trigger: ButtonTrigger
     ) -> ConfiguredButtonAction {
-        configuredBaseAction(for: button, trigger: trigger, profileID: selectedRemoteProfileID)
+        configuredBaseAction(for: button, trigger: trigger, profileID: selectedRemoteProfileID,
+                             applyingApplicationProfile: false)
     }
 
+    /// The action a press resolves to: the frontmost application's override when it has one,
+    /// otherwise the remote's own mapping.
     func configuredBaseAction(
         for button: RemoteButton,
         trigger: ButtonTrigger,
-        profileID: UUID?
+        profileID: UUID?,
+        applyingApplicationProfile: Bool = true
     ) -> ConfiguredButtonAction {
+        if applyingApplicationProfile,
+           let override = applicationButtonOverride(for: button, trigger: trigger) {
+            return override
+        }
         if let profileID,
            profileID != selectedRemoteProfileID,
            let profile = remoteDeviceProfiles.first(where: { $0.id == profileID }) {
@@ -308,16 +317,19 @@ extension AppSettings {
     }
 
     func configuredAction(for button: RemoteButton, trigger: ButtonTrigger) -> ConfiguredButtonAction {
-        configuredAction(for: button, trigger: trigger, profileID: selectedRemoteProfileID)
+        configuredAction(for: button, trigger: trigger, profileID: selectedRemoteProfileID,
+                         applyingApplicationProfile: false)
     }
 
     func configuredAction(for button: RemoteButton, trigger: ButtonTrigger,
-                          profileID: UUID?) -> ConfiguredButtonAction {
+                          profileID: UUID?, applyingApplicationProfile: Bool = true) -> ConfiguredButtonAction {
         if trigger != .singleClick,
-           configuredBaseAction(for: button, trigger: .singleClick, profileID: profileID).action == .directPassthrough {
+           configuredBaseAction(for: button, trigger: .singleClick, profileID: profileID,
+                                applyingApplicationProfile: applyingApplicationProfile).action == .directPassthrough {
             return .disabled
         }
-        let configured = configuredBaseAction(for: button, trigger: trigger, profileID: profileID)
+        let configured = configuredBaseAction(for: button, trigger: trigger, profileID: profileID,
+                                              applyingApplicationProfile: applyingApplicationProfile)
         if configured.action == .directPassthrough, !button.isDirectional || trigger != .singleClick {
             return .disabled
         }
