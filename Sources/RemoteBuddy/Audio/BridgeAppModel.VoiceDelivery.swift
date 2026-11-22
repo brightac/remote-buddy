@@ -182,7 +182,7 @@ extension BridgeAppModel {
             return true
         }
         let mode = streaming
-            ? settings.effectiveVoiceKeyMode
+            ? settings.voiceKeyModeForFrontmostApplication
             : (heldVoiceKeyMode ?? pendingVoiceKeyMode ?? settings.effectiveVoiceKeyMode)
         guard forceSoftware || !mode.usesHardwareMapping || requiresOrderedVoiceFn else {
             if streaming { clearApplicationIntegrationStatus() }

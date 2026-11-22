@@ -12,10 +12,22 @@ struct ApplicationButtonProfile: Codable, Equatable {
     var name: String?
     /// RemoteButton raw value → ButtonTrigger raw value → action.
     var buttons: [String: [String: ConfiguredButtonAction]]
+    /// The key the voice button sends to start and stop dictation in this application,
+    /// for example the application's own dictation shortcut instead of Fn.
+    var voiceKeyMode: VoiceKeyMode?
 
-    init(name: String? = nil, buttons: [String: [String: ConfiguredButtonAction]] = [:]) {
+    init(name: String? = nil, buttons: [String: [String: ConfiguredButtonAction]] = [:],
+         voiceKeyMode: VoiceKeyMode? = nil) {
         self.name = name
         self.buttons = buttons
+        self.voiceKeyMode = voiceKeyMode
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        buttons = try container.decodeIfPresent([String: [String: ConfiguredButtonAction]].self, forKey: .buttons) ?? [:]
+        voiceKeyMode = try container.decodeIfPresent(VoiceKeyMode.self, forKey: .voiceKeyMode)
     }
 
     func action(for button: RemoteButton, trigger: ButtonTrigger) -> ConfiguredButtonAction? {
@@ -65,6 +77,15 @@ extension AppSettings {
             defaults.set(data, forKey: ApplicationButtonProfiles.defaultsKey)
             applicationButtonProfilesCache = (data, newValue)
         }
+    }
+
+    /// The key the voice button sends when a dictation starts now: the frontmost
+    /// application's voice key when its profile has one, otherwise the configured one.
+    /// Voice-trigger tests during onboarding always use the configured key.
+    var voiceKeyModeForFrontmostApplication: VoiceKeyMode {
+        guard !isTestingVoiceTrigger, let bundleID = frontmostApplicationBundleIdentifier(),
+              let mode = applicationButtonProfiles[bundleID]?.voiceKeyMode else { return effectiveVoiceKeyMode }
+        return mode
     }
 
     /// The frontmost application's override for this button and trigger, if any.

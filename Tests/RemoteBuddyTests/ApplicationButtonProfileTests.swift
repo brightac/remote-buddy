@@ -101,4 +101,38 @@ struct ApplicationButtonProfileTests {
             #expect(performed.last?.action == .volumeDown)
         }
     }
+
+    @Test func voiceKeyFollowsTheFrontmostApplicationForWholeDictations() throws {
+        try withSettings { settings in
+            let claudeDictation = VoiceKeyMode.shortcut(
+                CustomKeyboardShortcut(keyCode: 2, modifierFlags: .command, keyLabel: "D"))
+            var all = profiles()
+            all[claude]?.voiceKeyMode = claudeDictation
+            settings.applicationButtonProfiles = all
+            var front: String? = claude
+            settings.frontmostApplicationBundleIdentifier = { front }
+            #expect(settings.voiceKeyModeForFrontmostApplication == claudeDictation)
+            front = codex  // Codex profile has no voice key: the configured one applies.
+            #expect(settings.voiceKeyModeForFrontmostApplication == settings.effectiveVoiceKeyMode)
+
+            var sent: [(VoiceKeyMode, Bool)] = []
+            let trigger = VoiceTapTrigger(selectedMode: { settings.voiceKeyModeForFrontmostApplication },
+                                          setKey: { sent.append(($0, $1)); return true })
+            front = claude
+            _ = trigger.setPressed(true); _ = trigger.setPressed(false)
+            front = codex  // Switching apps mid-dictation must not change the stop key.
+            _ = trigger.setPressed(true); _ = trigger.setPressed(false)
+            #expect(sent.map(\.0) == Array(repeating: claudeDictation, count: 4))
+            trigger.reset()
+            _ = trigger.setPressed(true)
+            #expect(sent.last?.0 == settings.effectiveVoiceKeyMode)
+        }
+    }
+
+    @Test func profileWithoutVoiceKeyDecodesFromOlderJSON() throws {
+        let json = #"{"com.openai.codex":{"name":"Codex","buttons":{}}}"#
+        let decoded = ApplicationButtonProfiles.decode(Data(json.utf8))
+        #expect(decoded["com.openai.codex"]?.voiceKeyMode == nil)
+        #expect(decoded["com.openai.codex"]?.name == "Codex")
+    }
 }
