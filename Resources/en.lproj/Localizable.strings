@@ -1354,3 +1354,22 @@
 "connection.device_guide.g9n9n.limit.detail" = "Automatic hardware keepalive lets both Smart Toggle and Hold-to-Talk stream past 60s, capped at ~5 minutes per session to prevent accidental battery drain.";
 "connection.device_guide.g9n9n.other_key_stops.title" = "Pressing another button stops hands-free listening";
 "connection.device_guide.g9n9n.other_key_stops.detail" = "During hands-free streaming, tapping any other physical button makes firmware stop audio immediately—finish speaking before using other keys.";
+
+"audio.mic_test.title" = "Microphone Test";
+"audio.mic_test.start" = "Test Microphone";
+"audio.mic_test.stop" = "End Test";
+"audio.mic_test.hint" = "Choose Test Microphone, then press the voice key and speak. Speech should land in the green band: raise the gain above if it stays left, lower it if it often turns red. The meter also shows the level during normal dictation.";
+"audio.mic_test.testing_hint" = "Testing: press the voice key and speak; the input method will not open. Adjust the gain while speaking. The test ends after 2 minutes.";
+"audio.mic_test.clipped" = "Clipping";
+"audio.mic_test.clipped_help" = "The sound hit full scale and was clipped, which hurts recognition. Lower the gain, then click to clear.";
+
+"audio.mic_test.section_title" = "Microphones";
+"audio.system_mic.default" = "System default";
+"audio.system_mic.volume" = "Input volume";
+"audio.system_mic.volume_fixed" = "This microphone's volume can't be changed on the Mac";
+"audio.system_mic.hint" = "Choose Test Microphone and speak into it. Speech should land in the green band: raise the input volume if it stays left, lower it if it often turns red.";
+"audio.system_mic.testing_hint" = "Testing: speak into this microphone. Adjust the volume while speaking. The test ends after 2 minutes.";
+"audio.system_mic.permission_denied" = "Microphone access is off. Turn on Remote Buddy in System Settings > Privacy & Security > Microphone, then test again.";
+"audio.system_mic.virtual" = "Virtual";
+"audio.system_mic.virtual_help" = "A software device installed by another app, not a real microphone; it is usually silent.";
+"audio.system_mic.none" = "No microphones found on this Mac.";

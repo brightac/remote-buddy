@@ -130,20 +130,32 @@ final class HeldVoiceShortcut: @unchecked Sendable {
 /// including cleanup after its owning app model has been released.
 final class VoiceTapTrigger {
     private let selectedMode: () -> VoiceKeyMode
+    private let isSuppressed: () -> Bool
     private let setKey: (VoiceKeyMode, Bool) -> Bool
     private var sessionMode: VoiceKeyMode?
+    /// Decided at the session's first edge so a test ending mid-session cannot leave a key down.
+    private var sessionSuppressed: Bool?
 
     init(selectedMode: @escaping () -> VoiceKeyMode,
+         isSuppressed: @escaping () -> Bool = { false },
          setKey: @escaping (VoiceKeyMode, Bool) -> Bool = { KeyboardInjector.setVoiceKeyPressed($0, isPressed: $1) }) {
         self.selectedMode = selectedMode
+        self.isSuppressed = isSuppressed
         self.setKey = setKey
     }
 
     func setPressed(_ pressed: Bool) -> Bool {
+        let suppressed = sessionSuppressed ?? isSuppressed()
+        sessionSuppressed = suppressed
+        // A microphone test streams audio without pressing the dictation key.
+        if suppressed { return true }
         let mode = sessionMode ?? selectedMode()
         sessionMode = mode
         return setKey(mode, pressed)
     }
 
-    func reset() { sessionMode = nil }
+    func reset() {
+        sessionMode = nil
+        sessionSuppressed = nil
+    }
 }

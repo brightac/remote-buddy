@@ -179,9 +179,10 @@ extension SettingsView {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(localization.text("audio.gain.title")).font(.headline)
                         HStack(spacing: 12) {
+                            // Gain applies to each audio packet as it arrives, so it can change mid-stream
+                            // while the level meter shows the result.
                             Slider(value: Binding(get: { settings.gainDB(for: profile.id) },
                                 set: { settings.setGainDB($0, for: profile.id) }), in: 0...24, step: 1)
-                                .disabled(model.isStreaming)
                             Text("\(Int(settings.gainDB(for: profile.id))) dB")
                                 .font(.system(.body, design: .monospaced)).frame(width: 54, alignment: .trailing)
                         }
@@ -189,6 +190,11 @@ extension SettingsView {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let identifier = profile.bluetoothIdentifier {
+                        MicrophoneTestPanel(monitor: model.microphoneLevels, identifier: identifier,
+                                            isConnected: model.isRemoteConnected(profile.id),
+                                            onStart: { model.systemMicrophones.stopTest(reason: "switch") })
                     }
                     if profile.model.isChromecastRemote {
                         let voiceMode = profile.effectiveG9N9NVoiceButtonMode
