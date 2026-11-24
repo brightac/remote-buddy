@@ -4,20 +4,50 @@ import SwiftUI
 /// from opening the input method while the user speaks to watch the level.
 struct MicrophoneTestPanel: View {
     @ObservedObject var monitor: MicrophoneLevelMonitor
-    @EnvironmentObject private var localization: LocalizationStore
     let identifier: UUID
     let isConnected: Bool
+    /// Runs before a test starts, so only one microphone is tested at a time.
+    var onStart: () -> Void = {}
 
     var body: some View {
         let isTesting = monitor.testingIdentifier == identifier
+        MicrophoneMeterPanel(
+            reading: monitor.readings[identifier],
+            isTesting: isTesting,
+            canStart: isConnected,
+            hintKey: "audio.mic_test.hint",
+            testingHintKey: "audio.mic_test.testing_hint",
+            onToggle: {
+                if isTesting {
+                    monitor.stopTest()
+                } else {
+                    onStart()
+                    monitor.startTest(for: identifier)
+                }
+            },
+            onResetClipping: { monitor.resetClipping(for: identifier) }
+        )
+    }
+}
+
+/// Title row, test switch, clipping badge, level bar and hint, shared by remote and Mac microphones.
+struct MicrophoneMeterPanel: View {
+    @EnvironmentObject private var localization: LocalizationStore
+    let reading: MicrophoneLevelReading?
+    let isTesting: Bool
+    let canStart: Bool
+    let hintKey: String
+    let testingHintKey: String
+    let onToggle: () -> Void
+    let onResetClipping: () -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 Text(localization.text("audio.mic_test.title")).font(.headline)
                 Spacer()
-                if let reading = monitor.readings[identifier], reading.clippedSamples > 0 {
-                    Button {
-                        monitor.resetClipping(for: identifier)
-                    } label: {
+                if let reading, reading.clippedSamples > 0 {
+                    Button(action: onResetClipping) {
                         Label(localization.text("audio.mic_test.clipped"), systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                     }
@@ -25,22 +55,19 @@ struct MicrophoneTestPanel: View {
                     .font(.caption)
                     .help(localization.text("audio.mic_test.clipped_help"))
                 }
-                Button {
-                    if isTesting { monitor.stopTest() } else { monitor.startTest(for: identifier) }
-                } label: {
+                Button(action: onToggle) {
                     Label(localization.text(isTesting ? "audio.mic_test.stop" : "audio.mic_test.start"),
                           systemImage: isTesting ? "stop.fill" : "waveform")
                 }
                 .compatibilityButtonStyle(isTesting ? .prominent : .standard)
-                .disabled(!isConnected && !isTesting)
+                .disabled(!canStart && !isTesting)
                 .accessibilityIdentifier("connection.mic-test.toggle")
             }
             TimelineView(.animation(minimumInterval: 1.0 / 20)) { _ in
-                MicrophoneLevelBar(reading: monitor.readings[identifier],
-                                   now: ProcessInfo.processInfo.systemUptime)
+                MicrophoneLevelBar(reading: reading, now: ProcessInfo.processInfo.systemUptime)
             }
             .frame(height: 30)
-            Text(localization.text(isTesting ? "audio.mic_test.testing_hint" : "audio.mic_test.hint"))
+            Text(localization.text(isTesting ? testingHintKey : hintKey))
                 .font(.caption)
                 .foregroundStyle(isTesting ? Color.accentColor : .secondary)
                 .fixedSize(horizontal: false, vertical: true)

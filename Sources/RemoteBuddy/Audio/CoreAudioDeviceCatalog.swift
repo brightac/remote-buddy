@@ -28,6 +28,12 @@ enum CoreAudioDeviceCatalog {
         }
     }
 
+    static func inputChannelCount(for deviceID: AudioDeviceID) -> Int {
+        withPropertyLock {
+            channelCount(for: deviceID, scope: kAudioDevicePropertyScopeInput)
+        }
+    }
+
     static func defaultInputDevice() -> AudioDeviceInfo? {
         withPropertyLock {
             defaultDevice(selector: kAudioHardwarePropertyDefaultInputDevice)

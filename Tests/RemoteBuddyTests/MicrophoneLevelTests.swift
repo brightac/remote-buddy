@@ -70,3 +70,24 @@ struct MicrophoneTestTests {
         #expect(monitor.readings[second]?.level == MicrophoneLevelReading.floor)
     }
 }
+
+@Suite("Mac microphones")
+struct SystemMicrophoneCatalogTests {
+    @Test func ownVirtualMicrophoneAndPrivateAggregatesAreNotListed() {
+        #expect(!SystemMicrophoneCatalog.shouldList(
+            AudioDeviceInfo(id: 1, uid: BuddyMicrophoneDevicePolicy.deviceUID, name: "Remote Buddy Mic")))
+        #expect(!SystemMicrophoneCatalog.shouldList(
+            AudioDeviceInfo(id: 2, uid: "CADefaultDeviceAggregate-123-4", name: "CADefaultDeviceAggregate")))
+        #expect(SystemMicrophoneCatalog.shouldList(
+            AudioDeviceInfo(id: 3, uid: "BuiltInMicrophoneDevice", name: "MacBook Air Microphone")))
+    }
+
+    @Test func listedMicrophonesAreRealInputDevices() {
+        // Runs against the real audio system; every listed entry must be an input device.
+        for microphone in SystemMicrophoneCatalog.microphones() {
+            #expect(CoreAudioDeviceCatalog.inputChannelCount(for: microphone.deviceID) > 0)
+            #expect(microphone.id != BuddyMicrophoneDevicePolicy.deviceUID)
+            if let volume = microphone.volume { #expect((0...1).contains(volume)) }
+        }
+    }
+}

@@ -1364,3 +1364,12 @@
 "audio.mic_test.clipped_help" = "The sound hit full scale and was clipped, which hurts recognition. Lower the gain, then click to clear.";
 
 "audio.mic_test.section_title" = "Microphones";
+"audio.system_mic.default" = "System default";
+"audio.system_mic.volume" = "Input volume";
+"audio.system_mic.volume_fixed" = "This microphone's volume can't be changed on the Mac";
+"audio.system_mic.hint" = "Choose Test Microphone and speak into it. Speech should land in the green band: raise the input volume if it stays left, lower it if it often turns red.";
+"audio.system_mic.testing_hint" = "Testing: speak into this microphone. Adjust the volume while speaking. The test ends after 2 minutes.";
+"audio.system_mic.permission_denied" = "Microphone access is off. Turn on Remote Buddy in System Settings > Privacy & Security > Microphone, then test again.";
+"audio.system_mic.virtual" = "Virtual";
+"audio.system_mic.virtual_help" = "A software device installed by another app, not a real microphone; it is usually silent.";
+"audio.system_mic.none" = "No microphones found on this Mac.";

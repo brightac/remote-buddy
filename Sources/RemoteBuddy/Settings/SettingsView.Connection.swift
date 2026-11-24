@@ -193,7 +193,8 @@ extension SettingsView {
                     }
                     if let identifier = profile.bluetoothIdentifier {
                         MicrophoneTestPanel(monitor: model.microphoneLevels, identifier: identifier,
-                                            isConnected: model.isRemoteConnected(profile.id))
+                                            isConnected: model.isRemoteConnected(profile.id),
+                                            onStart: { model.systemMicrophones.stopTest(reason: "switch") })
                     }
                     if profile.model.isChromecastRemote {
                         let voiceMode = profile.effectiveG9N9NVoiceButtonMode

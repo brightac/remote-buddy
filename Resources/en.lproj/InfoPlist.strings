@@ -1,3 +1,4 @@
 "CFBundleDisplayName" = "Remote Buddy";
 "CFBundleName" = "Remote Buddy";
 "NSBluetoothAlwaysUsageDescription" = "Connect to supported Bluetooth remotes to receive button presses and microphone audio.";
+"NSMicrophoneUsageDescription" = "Measure the level of this Mac's microphones when you test them in Settings.";

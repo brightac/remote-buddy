@@ -1366,3 +1366,12 @@
 "audio.mic_test.clipped_help" = "声音碰到上限被削顶，识别容易出错。把增益调小，点这里清除提示。";
 
 "audio.mic_test.section_title" = "麦克风";
+"audio.system_mic.default" = "系统默认";
+"audio.system_mic.volume" = "输入音量";
+"audio.system_mic.volume_fixed" = "这个麦克风不能在电脑上调音量";
+"audio.system_mic.hint" = "点“测试麦克风”后对着它说话，看电平条：说话时落在绿色区间合适，偏左就把输入音量调大，经常变红就调小。";
+"audio.system_mic.testing_hint" = "测试中：对着这个麦克风说话，音量可以边说边调，2 分钟后自动结束。";
+"audio.system_mic.permission_denied" = "没有麦克风权限。到“系统设置 > 隐私与安全性 > 麦克风”里打开 Remote Buddy，再点测试。";
+"audio.system_mic.virtual" = "虚拟";
+"audio.system_mic.virtual_help" = "这是别的软件装的虚拟设备，不是真麦克风，平时一般没有声音。";
+"audio.system_mic.none" = "没找到电脑上的麦克风。";

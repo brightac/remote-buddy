@@ -195,6 +195,7 @@ final class BridgeAppModel: ObservableObject, BluetoothRemoteBridgeDelegate {
         }
     )
     let microphoneLevels = MicrophoneLevelMonitor()
+    let systemMicrophones = SystemMicrophoneMonitor()
     lazy var voiceTapTrigger = VoiceTapTrigger(
         selectedMode: { [settings] in settings.effectiveVoiceKeyMode },
         isSuppressed: { [microphoneLevels] in microphoneLevels.isTestingSnapshot }

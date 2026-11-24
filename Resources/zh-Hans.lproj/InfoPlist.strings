@@ -1,3 +1,4 @@
 "CFBundleDisplayName" = "遥控搭子";
 "CFBundleName" = "遥控搭子";
 "NSBluetoothAlwaysUsageDescription" = "连接兼容蓝牙遥控器，接收按键与麦克风音频。";
+"NSMicrophoneUsageDescription" = "在设置里测试这台 Mac 的麦克风时，读取声音电平。";
